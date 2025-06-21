@@ -1,21 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Star, Clock, User, Shield, CheckCircle, Phone, MessageCircle, Navigation } from 'lucide-react';
-
-interface Runner {
-  id: string;
-  name: string;
-  rating: number;
-  reviewCount: number;
-  experience: string;
-  estimatedTime: string;
-  price: number;
-  distance: string;
-  profileImage: string;
-  specialties: string[];
-  completedJobs: number;
-  isVerified: boolean;
-  isOnline: boolean;
-}
+import { ArrowLeft, MapPin, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 interface RunnerSelectionProps {
   pickupLocation: string;
@@ -23,7 +9,7 @@ interface RunnerSelectionProps {
   selectedDate: string;
   selectedTime: string;
   onBack: () => void;
-  onSelectRunner: (runner: Runner) => void;
+  onSelectRunner: (runner: any) => void;
 }
 
 const RunnerSelection: React.FC<RunnerSelectionProps> = ({
@@ -34,114 +20,162 @@ const RunnerSelection: React.FC<RunnerSelectionProps> = ({
   onBack,
   onSelectRunner
 }) => {
-  const [assignedRunner, setAssignedRunner] = useState<Runner | null>(null);
   const [isSearching, setIsSearching] = useState(true);
   const [searchProgress, setSearchProgress] = useState(0);
-  const [runnerFound, setRunnerFound] = useState(false);
-
-  const dummyRunners: Runner[] = [
-    {
-      id: '1',
-      name: 'Michael Rodriguez',
-      rating: 4.9,
-      reviewCount: 127,
-      experience: '5 years',
-      estimatedTime: '8 min',
-      price: 85,
-      distance: '0.8 mi',
-      profileImage: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
-      specialties: ['Building Permits', 'Electrical'],
-      completedJobs: 342,
-      isVerified: true,
-      isOnline: true
-    },
-    {
-      id: '2',
-      name: 'Sarah Chen',
-      rating: 4.8,
-      reviewCount: 89,
-      experience: '3 years',
-      estimatedTime: '12 min',
-      price: 75,
-      distance: '0.5 mi',
-      profileImage: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
-      specialties: ['Plumbing', 'Mechanical'],
-      completedJobs: 198,
-      isVerified: true,
-      isOnline: true
-    },
-    {
-      id: '3',
-      name: 'David Thompson',
-      rating: 4.7,
-      reviewCount: 156,
-      experience: '7 years',
-      estimatedTime: '15 min',
-      price: 95,
-      distance: '1.2 mi',
-      profileImage: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
-      specialties: ['Building Permits', 'Zoning'],
-      completedJobs: 445,
-      isVerified: true,
-      isOnline: true
-    }
-  ];
+  const [availableRunners, setAvailableRunners] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
-    // Simulate the search and auto-assignment process
-    const searchInterval = setInterval(() => {
-      setSearchProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(searchInterval);
-          // Auto-assign the best available runner (closest with highest rating)
-          const bestRunner = dummyRunners
-            .filter(runner => runner.isOnline)
-            .sort((a, b) => {
-              // Sort by distance first, then by rating
-              const distanceA = parseFloat(a.distance);
-              const distanceB = parseFloat(b.distance);
-              if (distanceA !== distanceB) {
-                return distanceA - distanceB;
-              }
-              return b.rating - a.rating;
-            })[0];
-          
-          setTimeout(() => {
-            setAssignedRunner(bestRunner);
-            setRunnerFound(true);
-            setIsSearching(false);
-          }, 500);
-          
-          return 100;
-        }
-        return prev + 2;
-      });
-    }, 50);
-
-    return () => clearInterval(searchInterval);
+    searchForAvailableRunners();
   }, []);
 
-  const handleConfirmRunner = () => {
-    if (assignedRunner) {
-      onSelectRunner(assignedRunner);
+  const searchForAvailableRunners = async () => {
+    setIsSearching(true);
+    setError(null);
+    
+    try {
+      // Simulate search progress
+      const progressInterval = setInterval(() => {
+        setSearchProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      // Query for available runners
+      const { data: runners, error: runnersError } = await supabase
+        .from('runner_profiles')
+        .select(`
+          *,
+          user_profiles!runner_profiles_user_id_fkey (
+            id,
+            full_name,
+            email
+          )
+        `)
+        .eq('is_available', true)
+        .eq('is_online', true)
+        .eq('background_check_status', 'approved');
+
+      if (runnersError) {
+        throw runnersError;
+      }
+
+      clearInterval(progressInterval);
+      setSearchProgress(100);
+
+      setTimeout(() => {
+        setAvailableRunners(runners || []);
+        setIsSearching(false);
+      }, 1000);
+
+    } catch (err: any) {
+      console.error('Error searching for runners:', err);
+      setError('Failed to find available runners. Please try again.');
+      setIsSearching(false);
     }
   };
 
-  const handleFindNewRunner = () => {
-    setIsSearching(true);
-    setRunnerFound(false);
-    setSearchProgress(0);
-    setAssignedRunner(null);
-    
-    // Simulate finding a different runner
-    setTimeout(() => {
-      const availableRunners = dummyRunners.filter(r => r.id !== assignedRunner?.id && r.isOnline);
-      const newRunner = availableRunners[Math.floor(Math.random() * availableRunners.length)];
-      setAssignedRunner(newRunner);
-      setRunnerFound(true);
-      setIsSearching(false);
-    }, 2000);
+  const createPermitRequest = async (runnerId: string) => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('permit_requests')
+        .insert([
+          {
+            client_id: user.id,
+            runner_id: runnerId,
+            permit_type: 'building', // Default for now
+            project_description: 'Permit running service request',
+            pickup_location: pickupLocation,
+            dropoff_location: dropoffLocation,
+            requested_date: new Date().toISOString().split('T')[0],
+            requested_time: '09:00:00',
+            status: 'assigned',
+            priority: 'standard'
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Create assignment record
+      const { error: assignmentError } = await supabase
+        .from('permit_assignments')
+        .insert([
+          {
+            permit_request_id: data.id,
+            runner_id: runnerId,
+            status: 'assigned'
+          }
+        ]);
+
+      if (assignmentError) throw assignmentError;
+
+      // Send notification to runner
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert([
+          {
+            user_id: runnerId,
+            title: 'New Job Request',
+            message: `You have a new permit running request from ${pickupLocation} to ${dropoffLocation}`,
+            type: 'assignment',
+            action_url: `/runner/jobs/${data.id}`
+          }
+        ]);
+
+      if (notificationError) {
+        console.error('Failed to send notification:', notificationError);
+      }
+
+      return data;
+    } catch (err: any) {
+      console.error('Error creating permit request:', err);
+      throw err;
+    }
   };
+
+  const handleSelectRunner = async (runner: any) => {
+    try {
+      const request = await createPermitRequest(runner.id);
+      onSelectRunner({ ...runner, requestId: request.id });
+    } catch (err) {
+      setError('Failed to assign runner. Please try again.');
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-md mx-auto text-center p-6">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Search Failed</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="space-y-3">
+            <button
+              onClick={searchForAvailableRunners}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={onBack}
+              className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -158,7 +192,8 @@ const RunnerSelection: React.FC<RunnerSelectionProps> = ({
               </button>
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">
-                  {isSearching ? 'Finding your runner...' : 'Runner assigned'}
+                  {isSearching ? 'Finding available runners...' : 
+                   availableRunners.length > 0 ? 'Available Runners' : 'No Runners Available'}
                 </h1>
                 <p className="text-sm text-gray-500">{selectedDate} at {selectedTime}</p>
               </div>
@@ -172,7 +207,6 @@ const RunnerSelection: React.FC<RunnerSelectionProps> = ({
           {/* Map Area */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden h-96 lg:h-[600px] relative">
-              {/* Mock Map */}
               <div className="w-full h-full bg-gradient-to-br from-blue-100 to-green-100 relative">
                 <div className="absolute inset-0 bg-gray-200 opacity-20"></div>
                 
@@ -183,34 +217,6 @@ const RunnerSelection: React.FC<RunnerSelectionProps> = ({
                 <div className="absolute bottom-20 right-20 bg-green-600 text-white p-2 rounded-full shadow-lg">
                   <MapPin className="w-4 h-4" />
                 </div>
-
-                {/* Assigned Runner Location */}
-                {assignedRunner && (
-                  <div className="absolute top-32 left-32 transform -translate-x-1/2 -translate-y-1/2">
-                    <div className="bg-white rounded-full p-1 shadow-lg border-2 border-blue-500 animate-pulse">
-                      <img
-                        src={assignedRunner.profileImage}
-                        alt={assignedRunner.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    </div>
-                    <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded shadow-lg text-xs font-medium whitespace-nowrap">
-                      {assignedRunner.name}
-                    </div>
-                  </div>
-                )}
-
-                {/* Route Line */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                  <path
-                    d="M 100 100 Q 200 150 300 250"
-                    stroke="#3B82F6"
-                    strokeWidth="3"
-                    strokeDasharray="10,5"
-                    fill="none"
-                    opacity="0.7"
-                  />
-                </svg>
               </div>
 
               {/* Trip Info Overlay */}
@@ -235,15 +241,15 @@ const RunnerSelection: React.FC<RunnerSelectionProps> = ({
             </div>
           </div>
 
-          {/* Runner Assignment Panel */}
+          {/* Runner Selection Panel */}
           <div className="space-y-4">
             {isSearching ? (
               /* Searching State */
               <div className="bg-white rounded-xl p-6 shadow-sm text-center">
                 <div className="mb-6">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Finding your runner</h3>
-                  <p className="text-gray-600 text-sm">We're matching you with the best available runner in your area</p>
+                  <Loader2 className="animate-spin h-16 w-16 text-blue-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Searching for runners</h3>
+                  <p className="text-gray-600 text-sm">Looking for available permit runners in your area</p>
                 </div>
                 
                 {/* Progress Bar */}
@@ -261,118 +267,105 @@ const RunnerSelection: React.FC<RunnerSelectionProps> = ({
                   </div>
                   <div className="flex items-center justify-center space-x-2">
                     <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <span>Calculating optimal routes</span>
+                    <span>Verifying credentials</span>
                   </div>
                   <div className="flex items-center justify-center space-x-2">
                     <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    <span>Matching expertise to your needs</span>
+                    <span>Matching expertise</span>
                   </div>
                 </div>
               </div>
-            ) : assignedRunner ? (
-              /* Runner Assigned State */
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="p-6">
-                  <div className="flex items-center space-x-2 mb-4">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                    <h3 className="text-lg font-semibold text-gray-900">Runner Assigned</h3>
-                  </div>
-                  
-                  <div className="flex items-start space-x-4 mb-6">
-                    <div className="relative">
-                      <img
-                        src={assignedRunner.profileImage}
-                        alt={assignedRunner.name}
-                        className="w-16 h-16 rounded-full object-cover"
-                      />
-                      <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full"></div>
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="text-xl font-bold text-gray-900">{assignedRunner.name}</h4>
-                        {assignedRunner.isVerified && (
-                          <Shield className="w-5 h-5 text-blue-500" />
-                        )}
+            ) : availableRunners.length === 0 ? (
+              /* No Runners Available */
+              <div className="bg-white rounded-xl p-6 shadow-sm text-center">
+                <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Runners Available</h3>
+                <p className="text-gray-600 text-sm mb-6">
+                  There are currently no permit runners available in your area. 
+                  This could be due to high demand or time of day.
+                </p>
+                <div className="space-y-3">
+                  <button
+                    onClick={searchForAvailableRunners}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Search Again
+                  </button>
+                  <button
+                    onClick={onBack}
+                    className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Modify Request
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Available Runners List */
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    {availableRunners.length} Runner{availableRunners.length !== 1 ? 's' : ''} Available
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Select a runner to handle your permit request
+                  </p>
+                </div>
+
+                {availableRunners.map((runner) => (
+                  <div key={runner.id} className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                    <div className="flex items-start space-x-4 mb-4">
+                      <div className="relative">
+                        <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center">
+                          <span className="text-lg font-semibold text-gray-600">
+                            {runner.user_profiles?.full_name?.charAt(0) || 'R'}
+                          </span>
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
                       </div>
                       
-                      <div className="flex items-center space-x-4 text-sm text-gray-600 mb-3">
-                        <div className="flex items-center space-x-1">
-                          <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                          <span className="font-medium">{assignedRunner.rating}</span>
-                          <span>({assignedRunner.reviewCount} reviews)</span>
+                      <div className="flex-1">
+                        <h4 className="text-lg font-bold text-gray-900 mb-1">
+                          {runner.user_profiles?.full_name || 'Runner'}
+                        </h4>
+                        <div className="text-sm text-gray-600 mb-2">
+                          {runner.experience_years} years experience
+                        </div>
+                        {runner.specialties && runner.specialties.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-3">
+                            {runner.specialties.slice(0, 2).map((specialty: string) => (
+                              <span
+                                key={specialty}
+                                className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium"
+                              >
+                                {specialty}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="text-sm text-gray-600">
+                          {runner.completed_jobs} completed jobs
                         </div>
                       </div>
-                      
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {assignedRunner.specialties.map((specialty) => (
-                          <span
-                            key={specialty}
-                            className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium"
-                          >
-                            {specialty}
-                          </span>
-                        ))}
-                      </div>
-                      
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                       <div className="text-sm text-gray-600">
-                        {assignedRunner.completedJobs} completed jobs • {assignedRunner.experience} experience
+                        <div className="flex items-center space-x-1">
+                          <Clock className="w-4 h-4" />
+                          <span>Available now</span>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Trip Details */}
-                  <div className="bg-gray-50 rounded-lg p-4 mb-6 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Clock className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm text-gray-600">Arrival time</span>
-                      </div>
-                      <span className="font-semibold text-gray-900">{assignedRunner.estimatedTime}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Navigation className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm text-gray-600">Distance</span>
-                      </div>
-                      <span className="font-semibold text-gray-900">{assignedRunner.distance} away</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                      <span className="text-lg font-bold text-gray-900">Total</span>
-                      <span className="text-lg font-bold text-gray-900">${assignedRunner.price}</span>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="space-y-3">
-                    <button
-                      onClick={handleConfirmRunner}
-                      className="w-full bg-gray-900 text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center"
-                    >
-                      <CheckCircle className="w-5 h-5 mr-2" />
-                      Confirm Runner
-                    </button>
-                    
-                    <div className="flex space-x-3">
                       <button
-                        onClick={handleFindNewRunner}
-                        className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm"
+                        onClick={() => handleSelectRunner(runner)}
+                        className="bg-gray-900 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
                       >
-                        Find Different Runner
-                      </button>
-                      <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                        <Phone className="w-5 h-5 text-gray-600" />
-                      </button>
-                      <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                        <MessageCircle className="w-5 h-5 text-gray-600" />
+                        Select Runner
                       </button>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>

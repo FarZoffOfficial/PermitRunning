@@ -1,15 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Globe, HelpCircle, LogIn, UserPlus, Menu, User, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 import AuthModal from './auth/AuthModal';
 
 const Header = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const { user, signOut } = useAuth();
   const location = useLocation();
+
+  useEffect(() => {
+    if (user) {
+      loadUserProfile();
+    } else {
+      setUserProfile(null);
+    }
+  }, [user]);
+
+  const loadUserProfile = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
 
   const handleLoginClick = () => {
     setAuthModalMode('login');
@@ -30,6 +57,8 @@ const Header = () => {
     return location.pathname === path;
   };
 
+  const isRunner = userProfile?.user_type === 'runner';
+
   return (
     <>
       <header className="w-full bg-white shadow-sm border-b border-gray-200">
@@ -46,26 +75,42 @@ const Header = () => {
                 {/* Show Services and Become a Runner only when user is signed in */}
                 {user && (
                   <>
-                    <Link 
-                      to="/services" 
-                      className={`px-3 py-2 text-sm font-medium transition-colors ${
-                        isActivePage('/services') 
-                          ? 'text-blue-600 border-b-2 border-blue-600' 
-                          : 'text-gray-700 hover:text-gray-900'
-                      }`}
-                    >
-                      Services
-                    </Link>
-                    <Link 
-                      to="/become-runner" 
-                      className={`px-3 py-2 text-sm font-medium transition-colors ${
-                        isActivePage('/become-runner') 
-                          ? 'text-blue-600 border-b-2 border-blue-600' 
-                          : 'text-gray-700 hover:text-gray-900'
-                      }`}
-                    >
-                      Become a Runner
-                    </Link>
+                    {!isRunner && (
+                      <Link 
+                        to="/services" 
+                        className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          isActivePage('/services') 
+                            ? 'text-blue-600 border-b-2 border-blue-600' 
+                            : 'text-gray-700 hover:text-gray-900'
+                        }`}
+                      >
+                        Services
+                      </Link>
+                    )}
+                    {isRunner && (
+                      <Link 
+                        to="/runner/dashboard" 
+                        className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          isActivePage('/runner/dashboard') 
+                            ? 'text-blue-600 border-b-2 border-blue-600' 
+                            : 'text-gray-700 hover:text-gray-900'
+                        }`}
+                      >
+                        Dashboard
+                      </Link>
+                    )}
+                    {!isRunner && (
+                      <Link 
+                        to="/become-runner" 
+                        className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          isActivePage('/become-runner') 
+                            ? 'text-blue-600 border-b-2 border-blue-600' 
+                            : 'text-gray-700 hover:text-gray-900'
+                        }`}
+                      >
+                        Become a Runner
+                      </Link>
+                    )}
                   </>
                 )}
                 <Link 
@@ -123,17 +168,25 @@ const Header = () => {
                         <User className="w-4 h-4" />
                       </div>
                       <span className="text-sm font-medium hidden sm:inline">
-                        {user.user_metadata?.full_name || user.email?.split('@')[0]}
+                        {userProfile?.full_name || user.email?.split('@')[0]}
                       </span>
+                      {isRunner && (
+                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+                          Runner
+                        </span>
+                      )}
                     </button>
                     
                     {showUserMenu && (
                       <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
                         <div className="px-4 py-2 border-b border-gray-200">
                           <p className="text-sm font-medium text-gray-900">
-                            {user.user_metadata?.full_name || 'User'}
+                            {userProfile?.full_name || 'User'}
                           </p>
                           <p className="text-xs text-gray-500">{user.email}</p>
+                          {isRunner && (
+                            <p className="text-xs text-green-600 font-medium">Runner Account</p>
+                          )}
                         </div>
                         <Link 
                           to="/profile" 
@@ -142,13 +195,24 @@ const Header = () => {
                         >
                           Profile
                         </Link>
-                        <Link 
-                          to="/my-requests" 
-                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                          onClick={() => setShowUserMenu(false)}
-                        >
-                          My Requests
-                        </Link>
+                        {!isRunner && (
+                          <Link 
+                            to="/my-requests" 
+                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                            onClick={() => setShowUserMenu(false)}
+                          >
+                            My Requests
+                          </Link>
+                        )}
+                        {isRunner && (
+                          <Link 
+                            to="/runner/dashboard" 
+                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                            onClick={() => setShowUserMenu(false)}
+                          >
+                            Runner Dashboard
+                          </Link>
+                        )}
                         <Link 
                           to="/settings" 
                           className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
