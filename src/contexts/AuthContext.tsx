@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>
+  signUp: (email: string, password: string, fullName: string, userType: 'client' | 'runner') => Promise<{ error: any }>
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
 }
@@ -44,6 +44,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Create user profile when user signs up
       if (event === 'SIGNED_UP' && session?.user) {
+        const userType = session.user.user_metadata.user_type || 'client'
+        
         const { error } = await supabase
           .from('user_profiles')
           .insert([
@@ -51,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: session.user.id,
               email: session.user.email!,
               full_name: session.user.user_metadata.full_name || '',
-              user_type: 'client',
+              user_type: userType,
               is_verified: false,
             }
           ])
@@ -59,19 +61,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) {
           console.error('Error creating user profile:', error)
         }
+
+        // If user is signing up as a runner, also create a runner profile
+        if (userType === 'runner') {
+          const { error: runnerError } = await supabase
+            .from('runner_profiles')
+            .insert([
+              {
+                user_id: session.user.id,
+                experience_years: 0,
+                specialties: [],
+                hourly_rate: 0,
+                service_radius: 10,
+                rating: 0,
+                total_reviews: 0,
+                completed_jobs: 0,
+                is_available: false,
+                is_online: false,
+                background_check_status: 'pending',
+                insurance_verified: false,
+              }
+            ])
+          
+          if (runnerError) {
+            console.error('Error creating runner profile:', runnerError)
+          }
+        }
       }
     })
 
     return () => subscription.unsubscribe()
   }, [])
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, userType: 'client' | 'runner') => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
+          user_type: userType,
         }
       }
     })
