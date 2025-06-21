@@ -18,6 +18,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 interface JobRequest {
   id: string;
+  assignmentId: string;
   pickup_location: string;
   dropoff_location: string;
   project_description: string;
@@ -25,6 +26,7 @@ interface JobRequest {
   requested_time: string;
   priority: string;
   client_name: string;
+  client_id: string;
   estimated_duration: string;
   budget_max: number;
 }
@@ -39,11 +41,26 @@ const RunnerDashboard: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      loadRunnerProfile();
-      loadPendingJobs();
-      subscribeToJobRequests();
+      initializeDashboard();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (runnerProfile) {
+      loadPendingJobs();
+      loadActiveJob();
+      subscribeToJobRequests();
+    }
+  }, [runnerProfile]);
+
+  const initializeDashboard = async () => {
+    try {
+      await loadRunnerProfile();
+    } catch (error) {
+      console.error('Error initializing dashboard:', error);
+      setLoading(false);
+    }
+  };
 
   const loadRunnerProfile = async () => {
     try {
@@ -53,10 +70,18 @@ const RunnerDashboard: React.FC = () => {
         .eq('user_id', user?.id)
         .single();
 
-      if (error) throw error;
-      
-      setRunnerProfile(data);
-      setIsOnline(data.is_online || false);
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No runner profile found
+          console.log('No runner profile found for user');
+          setRunnerProfile(null);
+        } else {
+          throw error;
+        }
+      } else {
+        setRunnerProfile(data);
+        setIsOnline(data.is_online || false);
+      }
     } catch (error) {
       console.error('Error loading runner profile:', error);
     } finally {
@@ -75,6 +100,7 @@ const RunnerDashboard: React.FC = () => {
           permit_requests!permit_assignments_permit_request_id_fkey (
             *,
             user_profiles!permit_requests_client_id_fkey (
+              id,
               full_name
             )
           )
@@ -94,6 +120,7 @@ const RunnerDashboard: React.FC = () => {
         requested_time: assignment.permit_requests.requested_time,
         priority: assignment.permit_requests.priority,
         client_name: assignment.permit_requests.user_profiles?.full_name || 'Client',
+        client_id: assignment.permit_requests.user_profiles?.id || '',
         estimated_duration: assignment.permit_requests.estimated_duration || '2-3 hours',
         budget_max: assignment.permit_requests.budget_max || 100
       })) || [];
@@ -101,6 +128,56 @@ const RunnerDashboard: React.FC = () => {
       setPendingJobs(formattedJobs);
     } catch (error) {
       console.error('Error loading pending jobs:', error);
+    }
+  };
+
+  const loadActiveJob = async () => {
+    if (!runnerProfile) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('permit_assignments')
+        .select(`
+          *,
+          permit_requests!permit_assignments_permit_request_id_fkey (
+            *,
+            user_profiles!permit_requests_client_id_fkey (
+              id,
+              full_name
+            )
+          )
+        `)
+        .eq('runner_id', runnerProfile.id)
+        .in('status', ['accepted', 'in_progress'])
+        .single();
+
+      if (error) {
+        if (error.code !== 'PGRST116') {
+          throw error;
+        }
+        // No active job found
+        setActiveJob(null);
+        return;
+      }
+
+      const formattedJob = {
+        id: data.permit_requests.id,
+        assignmentId: data.id,
+        pickup_location: data.permit_requests.pickup_location,
+        dropoff_location: data.permit_requests.dropoff_location,
+        project_description: data.permit_requests.project_description,
+        requested_date: data.permit_requests.requested_date,
+        requested_time: data.permit_requests.requested_time,
+        priority: data.permit_requests.priority,
+        client_name: data.permit_requests.user_profiles?.full_name || 'Client',
+        client_id: data.permit_requests.user_profiles?.id || '',
+        estimated_duration: data.permit_requests.estimated_duration || '2-3 hours',
+        budget_max: data.permit_requests.budget_max || 100
+      };
+
+      setActiveJob(formattedJob);
+    } catch (error) {
+      console.error('Error loading active job:', error);
     }
   };
 
@@ -119,6 +196,19 @@ const RunnerDashboard: React.FC = () => {
         },
         () => {
           loadPendingJobs();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'permit_assignments',
+          filter: `runner_id=eq.${runnerProfile.id}`
+        },
+        () => {
+          loadPendingJobs();
+          loadActiveJob();
         }
       )
       .subscribe();
@@ -145,6 +235,7 @@ const RunnerDashboard: React.FC = () => {
       if (error) throw error;
       
       setIsOnline(newStatus);
+      setRunnerProfile(prev => ({ ...prev, is_online: newStatus, is_available: newStatus }));
     } catch (error) {
       console.error('Error updating online status:', error);
     }
@@ -159,7 +250,7 @@ const RunnerDashboard: React.FC = () => {
           status: 'accepted',
           accepted_at: new Date().toISOString()
         })
-        .eq('id', (job as any).assignmentId);
+        .eq('id', job.assignmentId);
 
       if (assignmentError) throw assignmentError;
 
@@ -176,19 +267,21 @@ const RunnerDashboard: React.FC = () => {
       setPendingJobs(prev => prev.filter(j => j.id !== job.id));
 
       // Send notification to client
-      const { error: notificationError } = await supabase
-        .from('notifications')
-        .insert([
-          {
-            user_id: user?.id, // This should be client_id, but we need to get it from the request
-            title: 'Runner Accepted Your Request',
-            message: `Your permit runner is on the way to ${job.pickup_location}`,
-            type: 'status_update'
-          }
-        ]);
+      if (job.client_id) {
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .insert([
+            {
+              user_id: job.client_id,
+              title: 'Runner Accepted Your Request',
+              message: `Your permit runner is on the way to ${job.pickup_location}`,
+              type: 'status_update'
+            }
+          ]);
 
-      if (notificationError) {
-        console.error('Failed to send notification:', notificationError);
+        if (notificationError) {
+          console.error('Failed to send notification:', notificationError);
+        }
       }
     } catch (error) {
       console.error('Error accepting job:', error);
@@ -201,7 +294,7 @@ const RunnerDashboard: React.FC = () => {
       const { error: assignmentError } = await supabase
         .from('permit_assignments')
         .update({ status: 'cancelled' })
-        .eq('id', (job as any).assignmentId);
+        .eq('id', job.assignmentId);
 
       if (assignmentError) throw assignmentError;
 
@@ -223,6 +316,58 @@ const RunnerDashboard: React.FC = () => {
     }
   };
 
+  const completeJob = async () => {
+    if (!activeJob) return;
+
+    try {
+      // Update assignment status
+      const { error: assignmentError } = await supabase
+        .from('permit_assignments')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          actual_completion: new Date().toISOString()
+        })
+        .eq('id', activeJob.assignmentId);
+
+      if (assignmentError) throw assignmentError;
+
+      // Update permit request status
+      const { error: requestError } = await supabase
+        .from('permit_requests')
+        .update({ status: 'completed' })
+        .eq('id', activeJob.id);
+
+      if (requestError) throw requestError;
+
+      // Clear active job
+      setActiveJob(null);
+
+      // Send notification to client
+      if (activeJob.client_id) {
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .insert([
+            {
+              user_id: activeJob.client_id,
+              title: 'Job Completed',
+              message: `Your permit request has been completed successfully!`,
+              type: 'status_update'
+            }
+          ]);
+
+        if (notificationError) {
+          console.error('Failed to send notification:', notificationError);
+        }
+      }
+
+      // Reload runner profile to update stats
+      loadRunnerProfile();
+    } catch (error) {
+      console.error('Error completing job:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -234,9 +379,20 @@ const RunnerDashboard: React.FC = () => {
   if (!runnerProfile) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <User className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Runner Profile Not Found</h2>
-          <p className="text-gray-600">Please complete your runner profile setup.</p>
+          <p className="text-gray-600 mb-6">
+            It looks like you don't have a runner profile yet. This might be because:
+          </p>
+          <ul className="text-left text-gray-600 mb-6 space-y-2">
+            <li>• Your account wasn't set up as a runner</li>
+            <li>• Your runner profile is still being processed</li>
+            <li>• There was an error during registration</li>
+          </ul>
+          <p className="text-gray-600">
+            Please contact support or try signing up as a runner again.
+          </p>
         </div>
       </div>
     );
@@ -293,7 +449,7 @@ const RunnerDashboard: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Completed Jobs</p>
-                  <p className="text-2xl font-bold text-gray-900">{runnerProfile.completed_jobs}</p>
+                  <p className="text-2xl font-bold text-gray-900">{runnerProfile.completed_jobs || 0}</p>
                 </div>
               </div>
             </div>
@@ -457,16 +613,35 @@ const RunnerDashboard: React.FC = () => {
                         <Navigation className="w-4 h-4 text-gray-400" />
                         <span className="text-gray-600">{activeJob.dropoff_location}</span>
                       </div>
+                      <div className="flex items-center space-x-2">
+                        <User className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-600">Client: {activeJob.client_name}</span>
+                      </div>
                     </div>
                     
-                    <div className="flex space-x-2 pt-4">
-                      <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center">
-                        <Phone className="w-4 h-4 mr-1" />
-                        Call Client
-                      </button>
-                      <button className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center">
-                        <MessageCircle className="w-4 h-4 mr-1" />
-                        Message
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-green-600">
+                        ${activeJob.budget_max}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 pt-4">
+                      <div className="flex space-x-2">
+                        <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center">
+                          <Phone className="w-4 h-4 mr-1" />
+                          Call Client
+                        </button>
+                        <button className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center">
+                          <MessageCircle className="w-4 h-4 mr-1" />
+                          Message
+                        </button>
+                      </div>
+                      <button
+                        onClick={completeJob}
+                        className="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center"
+                      >
+                        <CheckCircle className="w-5 h-5 mr-2" />
+                        Mark as Complete
                       </button>
                     </div>
                   </div>
