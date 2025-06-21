@@ -28,13 +28,19 @@ const Header = () => {
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('id', user.id)
-        .single();
+        .eq('id', user.id);
 
       if (error) throw error;
-      setUserProfile(data);
+      
+      // Check if data exists and has at least one row
+      if (data && data.length > 0) {
+        setUserProfile(data[0]);
+      } else {
+        setUserProfile(null);
+      }
     } catch (error) {
       console.error('Error loading user profile:', error);
+      setUserProfile(null);
     }
   };
 
