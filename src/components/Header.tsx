@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Search, Globe, HelpCircle, LogIn, UserPlus, Menu, User, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import AuthModal from './auth/AuthModal';
@@ -8,6 +9,7 @@ const Header = () => {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { user, signOut } = useAuth();
+  const location = useLocation();
 
   const handleLoginClick = () => {
     setAuthModalMode('login');
@@ -24,6 +26,10 @@ const Header = () => {
     setShowUserMenu(false);
   };
 
+  const isActivePage = (path: string) => {
+    return location.pathname === path;
+  };
+
   return (
     <>
       <header className="w-full bg-white shadow-sm border-b border-gray-200">
@@ -32,21 +38,56 @@ const Header = () => {
             {/* Logo and Navigation */}
             <div className="flex items-center space-x-8">
               <div className="flex-shrink-0">
-                <h1 className="text-2xl font-bold text-gray-900">PermitRun</h1>
+                <Link to="/" className="text-2xl font-bold text-gray-900 hover:text-gray-700 transition-colors">
+                  PermitRun
+                </Link>
               </div>
               <nav className="hidden md:flex space-x-6">
-                <a href="#" className="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
-                  Services
-                </a>
-                <a href="#" className="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
-                  Become a Runner
-                </a>
-                <a href="#" className="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                {/* Show Services and Become a Runner only when user is signed in */}
+                {user && (
+                  <>
+                    <Link 
+                      to="/services" 
+                      className={`px-3 py-2 text-sm font-medium transition-colors ${
+                        isActivePage('/services') 
+                          ? 'text-blue-600 border-b-2 border-blue-600' 
+                          : 'text-gray-700 hover:text-gray-900'
+                      }`}
+                    >
+                      Services
+                    </Link>
+                    <Link 
+                      to="/become-runner" 
+                      className={`px-3 py-2 text-sm font-medium transition-colors ${
+                        isActivePage('/become-runner') 
+                          ? 'text-blue-600 border-b-2 border-blue-600' 
+                          : 'text-gray-700 hover:text-gray-900'
+                      }`}
+                    >
+                      Become a Runner
+                    </Link>
+                  </>
+                )}
+                <Link 
+                  to="/business" 
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    isActivePage('/business') 
+                      ? 'text-blue-600 border-b-2 border-blue-600' 
+                      : 'text-gray-700 hover:text-gray-900'
+                  }`}
+                >
                   Business
-                </a>
-                <a href="#" className="text-gray-700 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                </Link>
+                <Link 
+                  to="/about" 
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    isActivePage('/about') 
+                      ? 'text-blue-600 border-b-2 border-blue-600' 
+                      : 'text-gray-700 hover:text-gray-900'
+                  }`}
+                >
                   About
-                </a>
+                </Link>
               </nav>
             </div>
 
@@ -94,15 +135,27 @@ const Header = () => {
                           </p>
                           <p className="text-xs text-gray-500">{user.email}</p>
                         </div>
-                        <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                        <Link 
+                          to="/profile" 
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => setShowUserMenu(false)}
+                        >
                           Profile
-                        </a>
-                        <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                        </Link>
+                        <Link 
+                          to="/my-requests" 
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => setShowUserMenu(false)}
+                        >
                           My Requests
-                        </a>
-                        <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                        </Link>
+                        <Link 
+                          to="/settings" 
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => setShowUserMenu(false)}
+                        >
                           Settings
-                        </a>
+                        </Link>
                         <div className="border-t border-gray-200 mt-2 pt-2">
                           <button
                             onClick={handleSignOut}
