@@ -6,11 +6,12 @@ interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
   initialMode?: 'login' | 'register'
+  onAuthSuccess?: () => void
 }
 
 type UserType = 'client' | 'runner'
 
-const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login', onAuthSuccess }) => {
   const [mode, setMode] = useState<'login' | 'register' | 'user-type-selection'>(initialMode)
   const [selectedUserType, setSelectedUserType] = useState<UserType | null>(null)
   const [showPassword, setShowPassword] = useState(false)
@@ -78,6 +79,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
           setSuccess('Successfully logged in!')
           setTimeout(() => {
             onClose()
+            onAuthSuccess?.()
           }, 1000)
         }
       } else {
@@ -86,6 +88,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
           setError(error.message)
         } else {
           setSuccess('Account created successfully! Please check your email to verify your account.')
+          setTimeout(() => {
+            onClose()
+            onAuthSuccess?.()
+          }, 2000)
         }
       }
     } catch (err) {
